@@ -3,14 +3,38 @@ import string
 
 
 class PreProcessor(object):
+    STOPWORDS = [
+        'i', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves', 'you', "you're",
+        "you've", "you'll", "you'd", 'your', 'yours', 'yourself', 'yourselves', 'he',
+        'him', 'his', 'himself', 'she', "she's", 'her', 'hers', 'herself', 'it', "it's",
+        'its', 'itself', 'they', 'them', 'their', 'theirs', 'themselves', 'what', 'which',
+        'who', 'whom', 'this', 'that', "that'll", 'these', 'those', 'am', 'is', 'are',
+        'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'having', 'do', 'does',
+        'did', 'doing', 'a', 'an', 'the', 'and', 'but', 'if', 'or', 'because', 'as', 'until',
+        'while', 'of', 'at', 'by', 'for', 'with', 'about', 'against', 'between', 'into',
+        'through', 'during', 'before', 'after', 'above', 'below', 'to', 'from', 'up', 'down',
+        'in', 'out', 'on', 'off', 'over', 'under', 'again', 'further', 'then', 'once', 'here',
+        'there', 'when', 'where', 'why', 'how', 'all', 'any', 'both', 'each', 'few', 'more',
+        'most', 'other', 'some', 'such', 'no', 'nor', 'not', 'only', 'own', 'same', 'so', 'than',
+        'too', 'very', 's', 't', 'can', 'will', 'just', 'don', "don't", 'should', "should've",
+        'now', 'd', 'll', 'm', 'o', 're', 've', 'y', 'ain', 'aren', "aren't", 'couldn', "couldn't",
+        'didn', "didn't", 'doesn', "doesn't", 'hadn', "hadn't", 'hasn', "hasn't", 'haven', "haven't",
+        'isn', "isn't", 'ma', 'mightn', "mightn't", 'mustn', "mustn't", 'needn', "needn't", 'shan',
+        "shan't", 'shouldn', "shouldn't", 'wasn', "wasn't", 'weren', "weren't", 'won', "won't",
+        'wouldn', "wouldn't"
+    ]
+
     def normalizer(self, row):
         return row.translate(str.maketrans('', '', string.punctuation)).lower()
 
     def tokenizer(self, row):
         return row.split()
 
+    def ngram_tokenizer(self, row, n=4):
+        return self.ngram(row, n)
+
     def stopwords(self, tokens):
-        return tokens
+        return [token for token in tokens if token not in self.STOPWORDS]
 
     def stemming(self, token):
         return token
@@ -31,6 +55,13 @@ class PreProcessor(object):
                 self._document_terms_frequency[token][document_id] = 1
             else:
                 self._document_terms_frequency[token][document_id] += 1
+
+    def ngram(self, text, n=4):
+        size = len(text)
+        if n > size:
+            raise ValueError("n cannot be bigger than text size")
+
+        return list([''.join(v) for v in zip(*[text[i:] for i in range(n)])])
 
     def get_index_table(self):
         return self._inverted_index_table
@@ -117,19 +148,80 @@ class SearchEngine(PreProcessor):
         )
 
 
-def mock_search_engine_process(rows):
+class KoreanChosungSearchEngine(SearchEngine):
+    CHOSUNG_START_LETTER = 4352
+    JAMO_START_LETTER = 44032
+    JAMO_END_LETTER = 55203
+    JAMO_CYCLE = 588
+
+    CHOSUNG = {
+        0x1100: 'ㄱ',
+        0x1101: 'ㄲ',
+        0x1102: 'ㄴ',
+        0x1103: 'ㄷ',
+        0x1104: 'ㄸ',
+        0x1105: 'ㄹ',
+        0x1106: 'ㅁ',
+        0x1107: 'ㅂ',
+        0x1108: 'ㅃ',
+        0x1109: 'ㅅ',
+        0x110A: 'ㅆ',
+        0x110B: 'ㅇ',
+        0x110C: 'ㅈ',
+        0x110D: 'ㅉ',
+        0x110E: 'ㅊ',
+        0x110F: 'ㅋ',
+        0x1110: 'ㅌ',
+        0x1111: 'ㅍ',
+        0x1112: 'ㅎ',
+    }
+
+    def tokenizer(self, row):
+        row = row.translate(str.maketrans('', '', '은는이가과을에의')).lower()
+        return [self.extract_chosung(text) for text in row.split()]
+
+    def extract_chosung(self, text):
+        result = ""
+        for value in text:
+            result += self.CHOSUNG[int(
+                (ord(value) - self.JAMO_START_LETTER) / self.JAMO_CYCLE + self.CHOSUNG_START_LETTER
+            )]
+        
+        return result
+
+
+def mock_english_search_engine_process(rows):
     engine = SearchEngine()
     
     for row in rows:
         engine.index(row)
 
-    term = 'in'
+    term = 'militia'
     documents = engine.search_term(term)
     for document_id in documents:
         document = engine.get_document_by_id(document_id)
         if document:
-            print(document, engine.tfidf(document_id, term))
-            print(document, engine.bm25(document_id, term))
+            print(document)
+            print("TF-IDF Score:", engine.tfidf(document_id, term))
+            print("BM25 Score:", engine.bm25(document_id, term))
+
+    del engine
+
+
+def mock_korean_chosung_search_engine_process(rows):
+    engine = KoreanChosungSearchEngine()
+    
+    for row in rows:
+        engine.index(row)
+    
+    term = 'ㄷㅎㅁㄱ'
+    documents = engine.search_term(term)
+    for document_id in documents:
+        document = engine.get_document_by_id(document_id)
+        if document:
+            print(document)
+            print("TF-IDF Score:", engine.tfidf(document_id, term))
+            print("BM25 Score:", engine.bm25(document_id, term))
 
     del engine
 
@@ -138,4 +230,13 @@ if __name__ == "__main__":
     with open("example.txt") as f:
         rows = f.read().split('\n')
 
-    mock_search_engine_process(rows)
+    print("Term: militia")
+    mock_english_search_engine_process(rows)
+
+    print("\n")
+
+    with open("korean.txt", encoding='utf-8') as f:
+        rows = f.read().split('\n')
+
+    print("Term: ㄷㅎㅁㄱ")
+    mock_korean_chosung_search_engine_process(rows)
